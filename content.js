@@ -3,7 +3,7 @@ const config = require('./config');
 const auth = require('./auth');
 
 async function createCommunityPost(data) {
-    const { contentType, s3Key, text, communityId, aspectRatio } = data;
+    const { contentType, s3Key, videoUrl, text, communityId, aspectRatio } = data;
     try {
         // Get fresh token
         const token = await auth.forceLogin();
@@ -13,10 +13,14 @@ async function createCommunityPost(data) {
             }
         };
 
-        // Step 1: Create Content (Validation removed to match v0 logic)
+        // Step 1: Create Content
         let url = s3Key;
-        if (contentType === 'image') {
-            // Backend snippet shows combinedUrl#lowestMultipleAr
+        let c_url = undefined;
+
+        if (contentType === 'video') {
+            url = ''; // Empty for video
+            c_url = s3Key; // S3 key goes here
+        } else if (contentType === 'image') {
             const ar = aspectRatio || '1';
             url = `${s3Key}#${ar}`;
         }
@@ -24,6 +28,7 @@ async function createCommunityPost(data) {
         const contentBody = {
             contentType: contentType,
             url: url,
+            ...(c_url && { c_url }), // Only include c_url if provided
             text: text || '',
             sendBy: 'userCommunity',
             belongsTo: communityId,
@@ -76,7 +81,7 @@ async function createCommunityPost(data) {
 }
 
 async function createClubPost(data) {
-    const { contentType, s3Key, text, clubId, aspectRatio, publicMode } = data;
+    const { contentType, s3Key, videoUrl, text, clubId, aspectRatio, publicMode } = data;
     try {
         const token = await auth.getValidToken();
         const axiosConfig = {
@@ -86,7 +91,12 @@ async function createClubPost(data) {
         };
 
         let url = s3Key;
-        if (contentType === 'image') {
+        let c_url = undefined;
+
+        if (contentType === 'video') {
+            url = '';
+            c_url = s3Key;
+        } else if (contentType === 'image') {
             const ar = aspectRatio || '1';
             url = `${s3Key}#${ar}`;
         }
@@ -94,6 +104,7 @@ async function createClubPost(data) {
         const contentBody = {
             contentType: contentType,
             url: url,
+            ...(c_url && { c_url }),
             text: text || '',
             sendBy: 'club',
             belongsTo: clubId,

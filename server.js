@@ -264,9 +264,11 @@ app.post('/api/share', async (req, res) => {
 
         // Upload to S3
         const s3Key = await uploadToS3(filePath);
+        // Cleanup temp file
+        await fs.remove(filePath);
 
         // Create community post
-        console.log('Creating community post with key:', s3Key);
+        console.log('Creating community post with S3 key:', s3Key);
         await createCommunityPost({
             contentType: post.is_video ? 'video' : 'image',
             s3Key: s3Key,
