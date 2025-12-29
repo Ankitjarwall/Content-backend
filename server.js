@@ -111,19 +111,12 @@ app.post('/api/settings', async (req, res) => {
         if (profiles !== undefined) database.profiles = profiles;
         if (activeProfileId !== undefined) database.activeProfileId = activeProfileId;
 
-        // Handle profile-specific fields (update active profile)
-        if (instagramUsernames !== undefined || scrapeLimit !== undefined) {
-            const currentProfileId = database.activeProfileId || 'default';
-            const profileIndex = database.profiles.findIndex(p => p.id === currentProfileId);
-
-            if (profileIndex !== -1) {
-                if (instagramUsernames !== undefined) {
-                    database.profiles[profileIndex].instagramUsernames = instagramUsernames;
-                }
-                if (scrapeLimit !== undefined) {
-                    database.profiles[profileIndex].scrapeLimit = scrapeLimit;
-                }
-            }
+        // Sync current UI fields to active profile
+        const currentProfileId = activeProfileId || database.activeProfileId || 'default';
+        const profileIndex = database.profiles.findIndex(p => p.id === currentProfileId);
+        if (profileIndex !== -1) {
+            if (instagramUsernames !== undefined) database.profiles[profileIndex].instagramUsernames = instagramUsernames;
+            if (scrapeLimit !== undefined) database.profiles[profileIndex].scrapeLimit = scrapeLimit;
         }
 
         await db.saveDb(database);
@@ -133,10 +126,8 @@ app.post('/api/settings', async (req, res) => {
     }
 });
 
-// Trigger Scraper for all usernames
+// Trigger Scrape
 app.post('/api/scrape', async (req, res) => {
-    console.log('\n========== SCRAPE REQUEST ==========');
-
     try {
         const database = await db.getDb();
         const activeProfileId = database.activeProfileId || 'default';
@@ -144,49 +135,49 @@ app.post('/api/scrape', async (req, res) => {
 
         const usernames = activeProfile?.instagramUsernames || [];
         const limit = activeProfile?.scrapeLimit || 10;
-        const pythonPath = 'python';
+        const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
         const scraperPath = path.join(__dirname, 'scraper.py');
 
-        console.log(`Active Profile: ${activeProfileId}`);
-        console.log('Configured usernames:', usernames);
-        console.log('Scrape limit:', limit);
+        console.log('\n========== START SCRAPE FLOW ==========');
+        console.log('Active Profile:', activeProfileId);
+        console.log('Usernames:', usernames);
+        console.log('Limit:', limit);
+        console.log('Python Path:', pythonPath);
 
         if (usernames.length === 0) {
             console.log('ERROR: No usernames configured');
             return res.status(400).json({ error: 'No usernames configured. Add usernames in Settings.' });
         }
 
-        console.log(`Starting scrape for ${usernames.length} users with limit ${limit} `);
-
         // Scrape each username
         usernames.forEach(username => {
-            console.log(`[${username}] Spawning scraper...`);
+            console.log(`\n[${username}] Spawning scraper...`);
             const args = [scraperPath, username, '--limit', limit.toString()];
 
             if (process.env.INSTAGRAM_USER &&
                 process.env.INSTAGRAM_PASSWORD &&
                 !process.env.INSTAGRAM_USER.includes('your_instagram_username')) {
-                console.log(`[${username}] Using authenticated scraping...`);
                 args.push('--login_user', process.env.INSTAGRAM_USER);
                 args.push('--login_pass', process.env.INSTAGRAM_PASSWORD);
             }
 
+            console.log(`[${username}] Args:`, args.map(a => a.includes(process.env.INSTAGRAM_PASSWORD) ? '***' : a));
             const child = spawn(pythonPath, args);
 
             child.stdout.on('data', (data) => {
-                console.log(`[${username}] ${data.toString().trim()} `);
+                console.log(`[${username}] ${data.toString().trim()}`);
             });
 
             child.stderr.on('data', (data) => {
-                console.log(`[${username}] ${data.toString().trim()} `);
+                console.log(`[${username}] ERR: ${data.toString().trim()}`);
             });
 
             child.on('close', (code) => {
-                console.log(`[${username}] Scraper finished with code ${code} `);
+                console.log(`[${username}] Scraper finished with code ${code}`);
             });
 
             child.on('error', (err) => {
-                console.error(`[${username}] Failed to start scraper: `, err.message);
+                console.error(`[${username}] Failed to start scraper:`, err.message);
             });
         });
 
@@ -200,6 +191,9 @@ app.post('/api/scrape', async (req, res) => {
 // Share post to a specific community
 app.post('/api/share', async (req, res) => {
     const { shortcode, communityId } = req.body;
+    console.log('\n========== SHARE REQUEST START ==========');
+    console.log('Shortcode:', shortcode);
+    console.log('Community ID:', communityId);
 
     if (!shortcode || !communityId) {
         return res.status(400).json({ error: 'shortcode and communityId required' });
@@ -220,8 +214,11 @@ app.post('/api/share', async (req, res) => {
         }
 
         if (!post) {
+            console.error('Post not found in local JSON files.');
             return res.status(404).json({ error: 'Post not found in results' });
         }
+
+        console.log('Post Type:', post.is_video ? 'VIDEO' : 'IMAGE');
 
         // Force a fresh login to ensure valid JWT token
         console.log('Getting fresh auth token...');
@@ -232,9 +229,9 @@ app.post('/api/share', async (req, res) => {
         await fs.ensureDir(tempDir);
         const mediaUrl = post.is_video ? post.video_url : post.display_url;
         const extension = post.is_video ? '.mp4' : '.jpg';
-        const filePath = path.join(tempDir, `${shortcode}${extension} `);
+        const filePath = path.join(tempDir, `${shortcode}${extension}`);
 
-        console.log(`Downloading ${mediaUrl} for sharing...`);
+        console.log(`Downloading ${mediaUrl} to ${filePath}...`);
         const response = await axios({
             url: mediaUrl,
             method: 'GET',
@@ -252,17 +249,16 @@ app.post('/api/share', async (req, res) => {
             writer.on('error', reject);
         });
 
-        // Check file size (max 50MB for videos, 10MB for images)
         const stats = await fs.stat(filePath);
         const fileSizeMB = stats.size / (1024 * 1024);
-        const maxSizeMB = post.is_video ? 50 : 10;
-
         console.log(`Downloaded file size: ${fileSizeMB.toFixed(2)} MB`);
 
+        const maxSizeMB = post.is_video ? 50 : 10;
         if (fileSizeMB > maxSizeMB) {
+            console.error(`File exceeds limit: ${fileSizeMB.toFixed(1)}MB > ${maxSizeMB}MB`);
             await fs.remove(filePath);
             return res.status(413).json({
-                error: `File too large(${fileSizeMB.toFixed(1)}MB).Max allowed: ${maxSizeMB}MB for ${post.is_video ? 'videos' : 'images'}.`
+                error: `File too large (${fileSizeMB.toFixed(1)}MB). Max allowed: ${maxSizeMB}MB for ${post.is_video ? 'videos' : 'images'}.`
             });
         }
 
@@ -270,6 +266,7 @@ app.post('/api/share', async (req, res) => {
         const s3Key = await uploadToS3(filePath);
 
         // Create community post
+        console.log('Creating community post with key:', s3Key);
         await createCommunityPost({
             contentType: post.is_video ? 'video' : 'image',
             s3Key: s3Key,
@@ -288,10 +285,11 @@ app.post('/api/share', async (req, res) => {
 
         // Cleanup
         await fs.remove(filePath);
+        console.log('========== SHARE REQUEST SUCCESS ==========');
 
-        res.json({ success: true, message: `Shared to community ${communityId} ` });
+        res.json({ success: true, message: `Shared to community ${communityId}` });
     } catch (error) {
-        console.error('Share error:', error.message);
+        console.error('Share error:', error.response?.data || error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -299,29 +297,33 @@ app.post('/api/share', async (req, res) => {
 // --- Helper Functions ---
 
 async function handleUpload(shortcode) {
-    const database = await db.getDb();
-    const resultsDir = path.join(__dirname, 'results');
-    const files = await fs.readdir(resultsDir);
-    const jsonFiles = files.filter(f => f.endsWith('_posts.json'));
-
-    let post = null;
-    for (const file of jsonFiles) {
-        const data = await fs.readJson(path.join(resultsDir, file));
-        post = data.find(p => p.shortcode === shortcode);
-        if (post) break;
-    }
-
-    if (!post) throw new Error('Post not found');
+    console.log('\n========== AUTO UPLOAD START ==========');
+    console.log('Shortcode:', shortcode);
 
     try {
+        const database = await db.getDb();
+        const resultsDir = path.join(__dirname, 'results');
+        const files = await fs.readdir(resultsDir);
+        const jsonFiles = files.filter(f => f.endsWith('_posts.json'));
+
+        let post = null;
+        for (const file of jsonFiles) {
+            const data = await fs.readJson(path.join(resultsDir, file));
+            post = data.find(p => p.shortcode === shortcode);
+            if (post) break;
+        }
+
+        if (!post) throw new Error('Post not found');
+        console.log('Post Metadata Loaded.');
+
         // 1. Download media
         const tempDir = path.join(__dirname, 'temp');
         await fs.ensureDir(tempDir);
         const mediaUrl = post.is_video ? post.video_url : post.display_url;
         const extension = post.is_video ? '.mp4' : '.jpg';
-        const filePath = path.join(tempDir, `${shortcode}${extension} `);
+        const filePath = path.join(tempDir, `${shortcode}${extension}`);
 
-        console.log(`Downloading ${mediaUrl} to ${filePath} `);
+        console.log(`Downloading ${mediaUrl} to temp file...`);
         const response = await axios({
             url: mediaUrl,
             method: 'GET',
@@ -336,30 +338,28 @@ async function handleUpload(shortcode) {
             writer.on('error', reject);
         });
 
+        const stats = await fs.stat(filePath);
+        console.log('File Downloaded. Size:', (stats.size / (1024 * 1024)).toFixed(2), 'MB');
+
         // 2. Upload to S3
-        console.log('Uploading to S3...');
         const s3Key = await uploadToS3(filePath);
 
         // 3. Create Community Post
-        console.log('Creating Community Post...');
-
-        // Get communityId from active profile
         const activeProfileId = database.activeProfileId || 'default';
         const activeProfile = (database.profiles || []).find(p => p.id === activeProfileId);
 
         if (!activeProfile || !activeProfile.communityId) {
-            throw new Error(`No active profile or community ID found.Profile: ${activeProfileId} `);
+            throw new Error(`No active profile or community ID found for ${activeProfileId}`);
         }
 
-        const postData = {
+        console.log('Creating Community Post in:', activeProfile.communityId);
+        await createCommunityPost({
             contentType: post.is_video ? 'video' : 'image',
             s3Key: s3Key,
             text: post.caption || '',
             communityId: activeProfile.communityId,
-            aspectRatio: '1' // Defaulting to 1 for now
-        };
-
-        await createCommunityPost(postData);
+            aspectRatio: '1'
+        });
 
         // 4. Update status to uploaded
         database.posts[shortcode].status = 'uploaded';
@@ -367,12 +367,15 @@ async function handleUpload(shortcode) {
 
         // Cleanup
         await fs.remove(filePath);
-        console.log(`Successfully uploaded post ${shortcode} `);
+        console.log('========== AUTO UPLOAD SUCCESS ==========');
 
     } catch (error) {
-        console.error(`Failed to upload post ${shortcode}: `, error.message);
-        database.posts[shortcode].status = 'failed';
-        await db.saveDb(database);
+        console.error('AUTO UPLOAD FAILED:', error.response?.data || error.message);
+        const database = await db.getDb();
+        if (database.posts[shortcode]) {
+            database.posts[shortcode].status = 'failed';
+            await db.saveDb(database);
+        }
     }
 }
 
@@ -387,22 +390,20 @@ app.get('/api/proxy', async (req, res) => {
             method: 'GET',
             responseType: 'stream',
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
 
-        // Set appropriate content type if available
         if (response.headers['content-type']) {
             res.setHeader('Content-Type', response.headers['content-type']);
         }
 
         response.data.pipe(res);
     } catch (error) {
-        console.error('Proxy error:', error.message);
         res.status(500).send('Error proxying image');
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
