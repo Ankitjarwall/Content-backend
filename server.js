@@ -21,6 +21,15 @@ db.initDb();
 
 // --- API Endpoints ---
 
+// Health Check
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'active',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Get all posts (merged with status)
 app.get('/api/posts', async (req, res) => {
     try {
