@@ -1,0 +1,41 @@
+{
+  "posts": {
+    "DR5V50njJ1v": {
+      "status": "failed"
+    },
+    "DRSvxp0DE_T": {
+      "status": "uploaded"
+    },
+    "DR2yNdlDNMH": {
+      "status": "failed"
+    },
+    "DS0sbhljJhM": {
+      "status": "uploaded"
+    },
+    "DSuXQnUjLdE": {
+      "status": "failed"
+    },
+    "DSXJeZlDP60": {
+      "status": "failed"
+    }
+  },
+  "communities": [
+    {
+      "id": "6951777863d3a977efdd168e",
+      "name": "Test Community"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Default Profile",
+      "communityId": "6951777863d3a977efdd168e",
+      "instagramUsernames": [
+        "gameofthronesnotofficial"
+      ],
+      "scrapeLimit": 10,
+      "isActive": true
+    }
+  ],
+  "activeProfileId": "default"
+}

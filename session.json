@@ -1,0 +1,13 @@
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoidXNlciIsImlkIjoiNjU3YmEwZDlmMTgxMzZlMmY2OTIzOWNmIiwiaWF0IjoxNzY2OTY0NjUyLCJleHAiOjE3NjY5NjYxNTJ9.gMSfCmt-RK1cLCiJceYBB1_ZUYdCHUEZFR-KEwQ5St4",
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoidXNlciIsImlkIjoiNjU3YmEwZDlmMTgxMzZlMmY2OTIzOWNmIiwiaWF0IjoxNzY2OTY0NjUyLCJleHAiOjE3Njk1NTY2NTJ9.o-dgiAfWauOdlSfKADnwLPTM1ib8NQS3ifiR7TwyYfs",
+  "user": {
+    "name": "Ankit",
+    "image": "public/user/SunDec17202323:35:04GMT+0530",
+    "_id": "657ba0d9f18136e2f69239cf",
+    "role": "Normal",
+    "reg": 12103196,
+    "profession": "Student"
+  },
+  "timestamp": 1766964652658
+}
